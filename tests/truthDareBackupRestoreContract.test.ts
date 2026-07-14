@@ -1,0 +1,136 @@
+import assert from 'node:assert/strict';
+import { buildSnapshotPayload } from '../src/services/snapshot/snapshotBuilder.ts';
+import { runRestoreFlow } from '../src/app/restoreFlow.ts';
+import {
+  TRUTH_DARE_RUNTIME_STORAGE_KEY,
+  TRUTH_DARE_THEMES_STORAGE_KEY
+} from '../src/chatroom/truthOrDarePersistence.ts';
+
+const storage = new Map<string, string>();
+(globalThis as any).localStorage = {
+  getItem: (key: string) => storage.get(key) ?? null,
+  setItem: (key: string, value: string) => storage.set(key, String(value)),
+  removeItem: (key: string) => storage.delete(key),
+  clear: () => storage.clear()
+};
+
+(globalThis as any).window = {
+  customEmojis: [],
+  emojiGroups: [],
+  allGroupEmojis: {},
+  hiddenEmojiIds: [],
+  customEmojiOrder: [],
+  selectedContacts: [],
+  currentArticle: null
+};
+
+const theme = {
+  id: 'late-night',
+  name: '深夜局',
+  questions: ['最近最想坦白的一件事？'],
+  challenges: ['给对方发一句夸夸'],
+  updatedAt: 1000
+};
+const runtime = {
+  c1: {
+    active: true,
+    round: 3,
+    theme,
+    updatedAt: 2000
+  }
+};
+
+localStorage.setItem(TRUTH_DARE_THEMES_STORAGE_KEY, JSON.stringify([theme]));
+localStorage.setItem(TRUTH_DARE_RUNTIME_STORAGE_KEY, JSON.stringify(runtime));
+
+const payload = buildSnapshotPayload({
+  contacts: [],
+  user: {
+    name: '测试用户',
+    avatar: '',
+    wechatId: 'tester',
+    gender: 'other',
+    signature: '',
+    momentsCover: '',
+    region: '',
+    balance: 0
+  },
+  walletBalance: 0,
+  messages: {},
+  favorites: [],
+  moments: [],
+  settings: {} as any,
+  aiSettings: {} as any,
+  worldBooks: [],
+  officialArticles: [],
+  contactMemories: {},
+  friendRequests: []
+});
+
+assert.deepEqual(payload.truthDareThemes, [theme], '快照应包含真心话大冒险主题库');
+assert.deepEqual(payload.truthDareRuntime, runtime, '快照应包含真心话大冒险进行中状态');
+
+localStorage.clear();
+
+const restoredFile = new File([JSON.stringify({
+  contacts: [],
+  messages: {},
+  truthDareThemes: [theme],
+  truthDareRuntime: runtime
+})], 'backup.json', { type: 'application/json' });
+
+const createSetter = () => () => {};
+
+await runRestoreFlow({
+  showToast: () => {},
+  setProgressDialog: () => {},
+  importBackupFile: async (file: File) => ({
+    success: true,
+    data: JSON.parse(await file.text()),
+    format: 'json'
+  }),
+  unwrapImportedBackupData: (data: any) => data,
+  adaptLegacyBackupData: (data: any) => data,
+  scoreSnapshotShape: () => 2,
+  normalizeLegacyContacts: (contacts: any[]) => contacts,
+  shouldSkipImportedContact: () => false,
+  mergeBuiltInContacts: (contacts: any[]) => contacts,
+  normalizeLegacyMessages: (messages: any) => messages,
+  normalizeAppearanceSettings: (settings: any) => settings,
+  normalizeAiSettings: (settings: any) => settings,
+  normalizeSoundVibrationSettings: (settings: any) => settings || {},
+  setContacts: createSetter(),
+  setUser: createSetter(),
+  setWalletBalance: createSetter(),
+  setMessages: createSetter(),
+  setFavorites: createSetter(),
+  setMoments: createSetter(),
+  setSettings: createSetter(),
+  setAiSettings: createSetter(),
+  setWorldBooks: createSetter(),
+  setMasks: createSetter(),
+  setHtmlTemplates: createSetter(),
+  setBubbleTemplates: createSetter(),
+  setForums: createSetter(),
+  setSoundVibrationSettings: createSetter(),
+  setContactMemories: createSetter(),
+  setOfficialArticles: createSetter(),
+  setFriendRequests: createSetter(),
+  setDiscoverUnreadCount: createSetter(),
+  setInboxLetters: createSetter(),
+  setSentLetters: createSetter(),
+  setMailboxTheme: createSetter(),
+  setAnonymousChatSettings: createSetter(),
+  setAnonymousHistory: createSetter(),
+  setAnonymousHasUnfinishedSession: createSetter(),
+  setAnonymousUnfinishedSession: createSetter(),
+  setDivinationHistory: createSetter(),
+  setHasAgreedTerms: createSetter(),
+  setWalletBank: createSetter(),
+  setMusicState: createSetter()
+}, restoredFile, 'overwrite');
+
+assert.deepEqual(JSON.parse(localStorage.getItem(TRUTH_DARE_THEMES_STORAGE_KEY) || 'null'), [theme], '全量恢复应写回真心话大冒险主题库');
+assert.deepEqual(JSON.parse(localStorage.getItem(TRUTH_DARE_RUNTIME_STORAGE_KEY) || 'null'), runtime, '全量恢复应写回真心话大冒险进行中状态');
+
+console.log('测试通过：真心话大冒险主题库和进行中状态会随备份恢复。');

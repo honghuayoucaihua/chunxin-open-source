@@ -1,0 +1,268 @@
+name: 构建 APK 候选包
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-apk-candidate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v5
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 设置 Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: 准备签名文件
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/android-release.jks
+          fi
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 计算候选版本信息
+        id: apk_meta
+        shell: bash
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          APK_BUILD_SEQUENCE: ${{ github.run_number }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+          APK_PREVIOUS_METADATA_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}/apk/candidates/latest.json
+        run: |
+          node --input-type=module <<'EOF'
+          import fs from 'node:fs';
+          import { resolveApkReleaseMeta } from './scripts/resolveApkReleaseMeta.js';
+
+          const meta = await resolveApkReleaseMeta({
+            env: process.env,
+            fetchImpl: globalThis.fetch
+          });
+          const shortSha = String(process.env.GITHUB_SHA || '').slice(0, 7);
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `base_version=${meta.baseVersion}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `base_build_number=${meta.baseBuildNumber}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${meta.versionName}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `build_number=${meta.buildNumber}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `apk_name=${meta.apkName}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `short_sha=${shortSha}\n`);
+          EOF
+
+      - name: 构建前端资源
+        run: npm run build
+
+      - name: 同步 Capacitor Android
+        run: npx cap sync android
+
+      - name: 编译 Release APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: android-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          APK_VERSION_NAME: ${{ steps.apk_meta.outputs.version }}
+          APK_BUILD_NUMBER: ${{ steps.apk_meta.outputs.build_number }}
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: 整理 APK 产物
+        id: apk_artifact
+        shell: bash
+        run: |
+          mkdir -p dist/apk
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/apk/${{ steps.apk_meta.outputs.apk_name }}"
+          echo "apk_path=dist/apk/${{ steps.apk_meta.outputs.apk_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: 生成候选元数据
+        shell: bash
+        env:
+          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+          APK_VERSION: ${{ steps.apk_meta.outputs.version }}
+          APK_BUILD_NUMBER: ${{ steps.apk_meta.outputs.build_number }}
+          APK_NAME: ${{ steps.apk_meta.outputs.apk_name }}
+          SHORT_SHA: ${{ steps.apk_meta.outputs.short_sha }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          mkdir -p dist/apk/candidates
+          node <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const apkPath = path.join('dist', 'apk', process.env.APK_NAME);
+          const apkSize = fs.statSync(apkPath).size;
+          const publicBaseUrl = String(process.env.R2_PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
+          const metadata = {
+            version: String(process.env.APK_VERSION || '').trim(),
+            versionCode: Number(process.env.APK_BUILD_NUMBER),
+            filename: String(process.env.APK_NAME || '').trim(),
+            apkUrl: publicBaseUrl ? `${publicBaseUrl}/apk/${process.env.APK_NAME}` : '',
+            apkSize,
+            updateLog: [
+              'GitHub Actions 自动构建候选 APK',
+              `版本号：${process.env.APK_VERSION}`,
+              `构建号：${process.env.APK_BUILD_NUMBER}`,
+              `提交：${process.env.SHORT_SHA}`,
+              `运行记录：https://github.com/${process.env.REPOSITORY}/actions/runs/${process.env.RUN_ID}`
+            ].join('\n'),
+            forceUpdate: false,
+            minVersion: null,
+            createdAt: Date.now(),
+            source: 'github-actions'
+          };
+          fs.writeFileSync(path.join('dist', 'apk', 'candidates', 'latest.json'), JSON.stringify(metadata, null, 2));
+          fs.writeFileSync(path.join('dist', 'apk', 'release-notes.md'), `${metadata.updateLog}\n`);
+          EOF
+
+      - name: 上传 APK 与候选元数据到 R2
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$R2_S3_ENDPOINT" ]; then
+            echo "未配置 R2 上传所需 Secrets，跳过上传"
+            exit 0
+          fi
+
+          if [ -z "$R2_PUBLIC_BASE_URL" ]; then
+            echo "已配置 R2 上传，但缺少 R2_PUBLIC_BASE_URL"
+            exit 1
+          fi
+
+          BUCKET="$R2_BUCKET_NAME"
+
+          if [ -z "$BUCKET" ]; then
+            BUCKET=$(python - <<'PY'
+          from urllib.parse import urlparse
+          import os
+          raw = os.environ['R2_S3_ENDPOINT'].strip()
+          parsed = urlparse(raw)
+          parts = [part for part in parsed.path.split('/') if part]
+          print(parts[0] if parts else '')
+          PY
+            )
+          fi
+
+          ENDPOINT_BASE=$(python - <<'PY'
+          from urllib.parse import urlparse
+          import os
+          raw = os.environ['R2_S3_ENDPOINT'].strip()
+          parsed = urlparse(raw)
+          print(f"{parsed.scheme}://{parsed.netloc}")
+          PY
+          )
+
+          if [ -z "$BUCKET" ] || [ -z "$ENDPOINT_BASE" ]; then
+            echo "无法从 R2 配置中解析 bucket 或 endpoint"
+            exit 1
+          fi
+
+          aws s3 cp "${{ steps.apk_artifact.outputs.apk_path }}" "s3://${BUCKET}/apk/${{ steps.apk_meta.outputs.apk_name }}" --endpoint-url "$ENDPOINT_BASE"
+          aws s3 cp "dist/apk/candidates/latest.json" "s3://${BUCKET}/apk/candidates/latest.json" --content-type "application/json" --cache-control "no-cache" --endpoint-url "$ENDPOINT_BASE"
+
+      - name: 清理 R2 旧版 APK
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          CURRENT_APK_NAME: ${{ steps.apk_meta.outputs.apk_name }}
+          APK_R2_KEEP_COUNT: 5
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$R2_S3_ENDPOINT" ]; then
+            echo "未配置 R2 上传所需 Secrets，跳过清理"
+            exit 0
+          fi
+
+          BUCKET="$R2_BUCKET_NAME"
+
+          if [ -z "$BUCKET" ]; then
+            BUCKET=$(python - <<'PY'
+          from urllib.parse import urlparse
+          import os
+          raw = os.environ['R2_S3_ENDPOINT'].strip()
+          parsed = urlparse(raw)
+          parts = [part for part in parsed.path.split('/') if part]
+          print(parts[0] if parts else '')
+          PY
+            )
+          fi
+
+          ENDPOINT_BASE=$(python - <<'PY'
+          from urllib.parse import urlparse
+          import os
+          raw = os.environ['R2_S3_ENDPOINT'].strip()
+          parsed = urlparse(raw)
+          print(f"{parsed.scheme}://{parsed.netloc}")
+          PY
+          )
+
+          if [ -z "$BUCKET" ] || [ -z "$ENDPOINT_BASE" ]; then
+            echo "无法从 R2 配置中解析 bucket 或 endpoint"
+            exit 1
+          fi
+
+          KEEP_COUNT="${APK_R2_KEEP_COUNT:-5}"
+          case "$KEEP_COUNT" in
+            ''|*[!0-9]*)
+              KEEP_COUNT=5
+              ;;
+          esac
+          if [ "$KEEP_COUNT" -lt 1 ]; then
+            KEEP_COUNT=1
+          fi
+
+          echo "R2 APK 清理策略：保留最近 ${KEEP_COUNT} 个 APK，避免已发布版本下载断链"
+
+          aws s3 ls "s3://${BUCKET}/apk/" --endpoint-url "$ENDPOINT_BASE" \
+            | awk '{print $4}' \
+            | grep -E '\.apk$' \
+            | sort -V \
+            | tac \
+            | awk -v keep="$KEEP_COUNT" 'NR > keep { print }' \
+            | while read -r object; do
+            if [ -z "$object" ]; then
+              continue
+            fi
+            if [ "$object" = "$CURRENT_APK_NAME" ]; then
+              continue
+            fi
+            echo "删除超出保留数量的旧版 APK: $object"
+            aws s3 rm "s3://${BUCKET}/apk/${object}" --endpoint-url "$ENDPOINT_BASE"
+          done
+
+      - name: 上传工作流产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-candidate-${{ steps.apk_meta.outputs.build_number }}
+          path: |
+            ${{ steps.apk_artifact.outputs.apk_path }}
+            dist/apk/candidates/latest.json
+            dist/apk/release-notes.md
+          if-no-files-found: error

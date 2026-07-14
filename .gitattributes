@@ -1,0 +1,21 @@
+* text=auto eol=lf
+
+# 二进制文件不处理换行符
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.mp3 binary
+*.mp4 binary
+*.apk binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.tar.gz binary
+*.keystore binary
+*.jks binary

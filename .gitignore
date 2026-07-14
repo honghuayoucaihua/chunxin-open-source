@@ -1,0 +1,38 @@
+node_modules/
+dist/
+dev-dist/
+output/
+
+# OS and local cache noise
+.DS_Store
+.npm-cache/
+
+# Local release artifacts and logs
+artifacts/
+dist-v*.zip
+*.log
+data_*.tar.gz
+
+# Local tooling and editor state
+.claude/
+.playwright-cli/
+.vscode
+.vscode/
+.idea/
+android/.idea/
+
+# Local secrets and signing files
+.env.local
+.dev.vars
+.wrangler/
+.cloudflare-migrate/
+*.jks
+*.keystore
+android/local.properties
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+.gradle-user-home/
+.gradle-user-home*/

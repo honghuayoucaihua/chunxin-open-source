@@ -1,0 +1,32 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+
+name = "chunxin"
+compatibility_date = "2026-05-04"
+pages_build_output_dir = "dist"
+
+[vars]
+TZ = "Asia/Shanghai"
+SYSHUO_API_URL = ""
+DIVINATION_API_URL = ""
+ALLOWED_ORIGINS = ""
+BUILTIN_AI_MODELS = "free/cc"
+BUILTIN_AI_DEFAULT_MODEL = "free/cc"
+BUILTIN_AI_FALLBACK_MODEL = "free/cc"
+BUILTIN_AI_DAILY_LIMIT = "500"
+BUILTIN_AI_PREMIUM_DAILY_LIMIT = "2000"
+BUILTIN_AI_MAX_CONTEXT_CHARS = "50000"
+BUILTIN_AI_PROXY_TIMEOUT_MS = "180000"
+BUILTIN_AI_RATE_LIMIT_MAX = "20"
+BUILTIN_AI_RATE_LIMIT_WINDOW_MS = "60000"
+APK_R2_PUBLIC_BASE_URL = ""
+
+[[d1_databases]]
+binding = "APP_DB"
+database_name = "chunxin"
+database_id = "YOUR_D1_DATABASE_ID"
+preview_database_id = "YOUR_D1_PREVIEW_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "COMMUNITY_BUCKET"
+bucket_name = "chunxin-community-assets"
+preview_bucket_name = "chunxin-community-assets-preview"

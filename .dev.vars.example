@@ -1,0 +1,4 @@
+SYSHUO_API_KEY=replace-with-your-openai-compatible-key
+DIVINATION_API_KEY=replace-with-your-divination-key
+ADMIN_KEY=replace-with-your-admin-key
+PREMIUM_TOKEN_SECRET=replace-with-a-long-random-string

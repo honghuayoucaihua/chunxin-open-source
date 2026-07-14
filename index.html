@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- 重要：iOS PWA 安全区/底部灰块适配依赖这组 meta；不要删除、重复注入或随意修改 viewport-fit。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="叙说·春信 - AI 聊天应用" />
+    <!-- 重要：iOS standalone 模式入口；改动前必须真机回归，否则很容易重新出现底部大块灰底。 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="叙说" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="叙说·春信" />
+    <meta name="msapplication-TileColor" content="#EDEDED" />
+    <meta name="msapplication-tap-highlight" content="no" />
+    <link rel="icon" href="/assets/image/favicon.ico" type="image/x-icon" />
+    <link rel="shortcut icon" href="/assets/image/favicon.ico" type="image/x-icon" />
+    <!-- iOS Splash Screens -->
+    <link rel="apple-touch-icon" href="/assets/image/logo.jpg" />
+    <title>叙说·春信</title>
+    <script>
+      (function() {
+        var ua = navigator.userAgent || '';
+        var isAndroid = /Android/i.test(ua);
+        var isIOS = /iPhone|iPad|iPod/i.test(ua);
+        var isCapacitorNative = !!(window.Capacitor && (
+          (typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform())
+          || (typeof window.Capacitor.getPlatform === 'function' && window.Capacitor.getPlatform() !== 'web')
+        ));
+        var isNativeAndroid = isAndroid && isCapacitorNative;
+        var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        var IOS_STANDALONE_BOTTOM_FALLBACK = /iPhone/i.test(ua) ? 34 : 0;
+        // 重要：这是 iOS PWA 专用兼容分支，用来处理独立模式下的灰底、视口高度漂移和安全区问题；不要随意改。
+        var isIOSStandalonePWA = isIOS && isStandalone;
+
+        document.documentElement.classList.toggle('ios-pwa-standalone', isIOSStandalonePWA);
+
+        // 重要：iOS PWA 必须把真实可视高度写入 CSS 变量，不能只依赖 100vh/100dvh；否则会反复出现底部灰色空白。
+        function applyAppViewportHeight(height) {
+          var normalized = Math.max(0, Math.round(Number(height) || 0));
+          if (!normalized || !document.documentElement) return;
+          document.documentElement.style.setProperty('--app-viewport-height', normalized + 'px');
+        }
+
+        // 重要：pageshow / 旋转 / 前后台切换后都要重新同步；不要缩减这些时机。
+        function applyIOSPwaBottomCompensation() {
+          var fallbackBottom = isIOSStandalonePWA ? IOS_STANDALONE_BOTTOM_FALLBACK : 0;
+          var nativeBottom = window.__nativeSafeAreaInsets && typeof window.__nativeSafeAreaInsets.bottom === 'number'
+            ? Math.max(0, Number(window.__nativeSafeAreaInsets.bottom) || 0)
+            : 0;
+          var compensation = Math.max(fallbackBottom, nativeBottom);
+          document.documentElement.style.setProperty('--safe-bottom-fallback', compensation + 'px');
+          document.documentElement.style.setProperty('--ios-pwa-bottom-compensation', compensation + 'px');
+        }
+
+        function syncIOSPwaViewportHeight() {
+          if (!isIOSStandalonePWA) return;
+          var viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+          applyAppViewportHeight(viewportHeight || window.innerHeight);
+          applyIOSPwaBottomCompensation();
+        }
+
+        function setKeyboardMetrics(height, visible, useOffsetBottom) {
+          var normalizedHeight = Math.max(0, Math.round(Number(height) || 0));
+          document.documentElement.style.setProperty('--keyboard-height', normalizedHeight + 'px');
+          document.documentElement.style.setProperty(
+            '--keyboard-offset-bottom',
+            (visible && useOffsetBottom ? normalizedHeight : 0) + 'px'
+          );
+          document.documentElement.style.setProperty(
+            '--chat-footer-safe-bottom',
+            (isNativeAndroid && visible ? 0 : 'var(--safe-padding-bottom)')
+          );
+        }
+
+        function applyNativeSafeAreaInsets(insets) {
+          if (!insets || !document.documentElement) return;
+          var normalized = {
+            top: Math.max(0, Number(insets.top) || 0),
+            right: Math.max(0, Number(insets.right) || 0),
+            bottom: Math.max(0, Number(insets.bottom) || 0),
+            left: Math.max(0, Number(insets.left) || 0)
+          };
+          var root = document.documentElement;
+          root.style.setProperty('--safe-area-inset-top', normalized.top + 'px');
+          root.style.setProperty('--safe-area-inset-right', normalized.right + 'px');
+          root.style.setProperty('--safe-area-inset-bottom', normalized.bottom + 'px');
+          root.style.setProperty('--safe-area-inset-left', normalized.left + 'px');
+          window.__nativeSafeAreaInsets = normalized;
+          applyIOSPwaBottomCompensation();
+        }
+
+        function applyNativeViewportMetrics(metrics) {
+          if (!metrics || !document.documentElement) return;
+          var safeAreaInsets = metrics.safeAreaInsets && typeof metrics.safeAreaInsets === 'object'
+            ? metrics.safeAreaInsets
+            : metrics;
+          applyNativeSafeAreaInsets(safeAreaInsets);
+          var keyboardVisible = metrics.keyboardVisible === true;
+          var keyboardHeight = keyboardVisible ? Math.max(0, Number(metrics.keyboardHeight) || 0) : 0;
+          window.__nativeViewportMetrics = {
+            safeAreaInsets: window.__nativeSafeAreaInsets,
+            keyboardHeight: keyboardHeight,
+            keyboardVisible: keyboardVisible
+          };
+          window.__nativeKeyboardMetrics = {
+            height: keyboardHeight,
+            visible: keyboardVisible
+          };
+          setKeyboardMetrics(keyboardHeight, keyboardVisible, false);
+        }
+
+        function syncNativeAndroidViewportMetrics() {
+          try {
+            if (!window.AndroidViewport || typeof window.AndroidViewport.getMetrics !== 'function') return;
+            var raw = window.AndroidViewport.getMetrics();
+            if (!raw) return;
+            applyNativeViewportMetrics(JSON.parse(raw));
+          } catch (e) {
+            console.warn('[Viewport] native Android metrics sync failed:', e);
+          }
+        }
+
+        window.__applyNativeViewportMetrics = applyNativeViewportMetrics;
+        window.__applyNativeSafeAreaInsets = function(insets) {
+          applyNativeViewportMetrics({
+            safeAreaInsets: insets,
+            keyboardHeight: window.__nativeKeyboardMetrics && typeof window.__nativeKeyboardMetrics.height === 'number'
+              ? window.__nativeKeyboardMetrics.height
+              : 0,
+            keyboardVisible: window.__nativeKeyboardMetrics && window.__nativeKeyboardMetrics.visible === true
+          });
+        };
+        if (isNativeAndroid) {
+          syncNativeAndroidViewportMetrics();
+          window.addEventListener('pageshow', syncNativeAndroidViewportMetrics);
+        }
+        document.addEventListener('visibilitychange', function() {
+          if (!document.hidden) {
+            if (isNativeAndroid) {
+              syncNativeAndroidViewportMetrics();
+            }
+            syncIOSPwaViewportHeight();
+          }
+        });
+        window.addEventListener('pageshow', syncIOSPwaViewportHeight);
+
+
+        // 重要：这一段和上面的 viewport 同步是成套适配，修改前请先在 iPhone 真机的 PWA 独立模式回归。
+        if (isIOSStandalonePWA) {
+          document.documentElement.style.setProperty('--chat-safe-bottom-fallback', IOS_STANDALONE_BOTTOM_FALLBACK + 'px');
+          applyIOSPwaBottomCompensation();
+          syncIOSPwaViewportHeight();
+          window.addEventListener('resize', syncIOSPwaViewportHeight);
+          window.addEventListener('orientationchange', syncIOSPwaViewportHeight);
+          if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', syncIOSPwaViewportHeight);
+          }
+        } else {
+          document.documentElement.style.setProperty('--chat-safe-bottom-fallback', '0px');
+          document.documentElement.style.setProperty('--safe-bottom-fallback', '0px');
+          document.documentElement.style.setProperty('--ios-pwa-bottom-compensation', '0px');
+        }
+
+        // iOS: 使用 CSS 的 fill-available 作为主方案，避免 JS 视口测量误差
+
+        // Android软键盘遮挡问题处理
+        if (isAndroid && window.visualViewport && !isCapacitorNative) {
+          function handleViewportChange() {
+            var viewportHeight = window.visualViewport.height;
+            var keyboardHeight = window.innerHeight - viewportHeight;
+            var normalizedKeyboardHeight = Math.max(0, keyboardHeight);
+            var keyboardVisible = normalizedKeyboardHeight > 100;
+            setKeyboardMetrics(normalizedKeyboardHeight, keyboardVisible, true);
+            if (keyboardHeight > 100) {
+              document.body.style.height = viewportHeight + 'px';
+              document.body.style.overflow = 'auto';
+            } else {
+              document.body.style.height = '';
+              document.body.style.overflow = '';
+            }
+          }
+          handleViewportChange();
+          window.visualViewport.addEventListener('resize', handleViewportChange);
+          window.visualViewport.addEventListener('scroll', handleViewportChange);
+        } else if (!isNativeAndroid) {
+          setKeyboardMetrics(0, false, true);
+        }
+      })();
+    </script>
+    <style></style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.40.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/src/index.css">
+</head>
+  <body class="overflow-hidden overscroll-none">
+    <div id="root"></div>
+  <script type="module" src="/src/index.tsx"></script>
+</body>
+</html>
