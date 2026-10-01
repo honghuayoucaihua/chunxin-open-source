@@ -25,8 +25,3 @@ binding = "APP_DB"
 database_name = "app_db"
 database_id = "464979d0-a07b-4eaa-8078-5121c04ed409"
 preview_database_id = "464979d0-a07b-4eaa-8078-5121c04ed409"
-
-[[r2_buckets]]
-binding = "COMMUNITY_BUCKET"
-bucket_name = "chunxin-community-assets"
-preview_bucket_name = "chunxin-community-assets-preview"
