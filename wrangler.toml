@@ -22,9 +22,9 @@ APK_R2_PUBLIC_BASE_URL = ""
 
 [[d1_databases]]
 binding = "APP_DB"
-database_name = "chunxin"
-database_id = "你的真实D1数据库ID"      # 必须替换
-preview_database_id = "你的真实D1预览数据库ID"  # 如无预览库，可填与上面相同的值
+database_name = "app_db"
+database_id = "464979d0-a07b-4eaa-8078-5121c04ed409"
+preview_database_id = "464979d0-a07b-4eaa-8078-5121c04ed409"
 
 [[r2_buckets]]
 binding = "COMMUNITY_BUCKET"
